@@ -1,35 +1,35 @@
 [
     {
-        "id": "tab_garaje_corto",
+        "id": "tab_garaje_dash",
         "type": "tab",
-        "label": "Alarma Garaje (corto)",
+        "label": "Alarma Garaje",
         "disabled": false,
-        "info": "ESP32 -> Node-RED -> PostgreSQL"
+        "info": "ESP32 -> Node-RED -> PostgreSQL + Dashboard"
     },
     {
-        "id": "c_in",
+        "id": "d_in",
         "type": "http in",
-        "z": "tab_garaje_corto",
+        "z": "tab_garaje_dash",
         "name": "POST /puerta",
         "url": "/puerta",
         "method": "post",
         "upload": false,
         "swaggerDoc": "",
-        "x": 140,
+        "x": 130,
         "y": 100,
         "wires": [
             [
-                "c_fn"
+                "d_fn"
             ]
         ]
     },
     {
-        "id": "c_fn",
+        "id": "d_fn",
         "type": "function",
-        "z": "tab_garaje_corto",
-        "name": "Validar estado",
-        "func": "const estado = msg.payload.estado;\n\nif (estado !== \"ABIERTA\" && estado !== \"CERRADA\") {\n    msg.statusCode = 400;\n    msg.payload = { error: \"estado no valido\" };\n    return [null, msg];   // salida 2: error\n}\n\nmsg.params = [estado];\nreturn [msg, null];       // salida 1: guardar",
-        "outputs": 2,
+        "z": "tab_garaje_dash",
+        "name": "Validar y preparar",
+        "func": "const estado = msg.payload.estado;\n\n// 1) Sanitizar: solo se aceptan dos estados\nif (estado !== \"ABIERTA\" && estado !== \"CERRADA\") {\n    msg.statusCode = 400;\n    return [null, null, msg];        // salida 3: error\n}\n\n// 2) Convertir a numero: 1 = abierta, 0 = cerrada\nconst valor = (estado === \"ABIERTA\") ? 1 : 0;\n\n// 3) Recordar desde cuando esta abierta (para el umbral)\nflow.set(\"abiertaDesde\", valor ? Date.now() : null);\n\nmsg.params = [\"puerta\", valor];    // parametros del INSERT\nreturn [msg, { payload: valor }, null];",
+        "outputs": 3,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
@@ -39,40 +39,180 @@
         "y": 100,
         "wires": [
             [
-                "c_pg"
+                "d_pg"
             ],
             [
-                "c_resp"
+                "d_chart"
+            ],
+            [
+                "d_resp"
             ]
         ]
     },
     {
-        "id": "c_pg",
+        "id": "d_pg",
         "type": "postgresql",
-        "z": "tab_garaje_corto",
-        "name": "Guardar evento",
-        "query": "INSERT INTO eventos (estado) VALUES ($1);",
+        "z": "tab_garaje_dash",
+        "name": "Guardar lectura",
+        "query": "INSERT INTO telemetria (sensor, valor) VALUES ($1, $2);",
         "postgreSQLConfig": "pg_config",
         "split": false,
         "rowsPerMsg": 1,
         "outputs": 1,
-        "x": 580,
-        "y": 80,
+        "x": 620,
+        "y": 60,
         "wires": [
             [
-                "c_resp"
+                "d_resp"
             ]
         ]
     },
     {
-        "id": "c_resp",
+        "id": "d_resp",
         "type": "http response",
-        "z": "tab_garaje_corto",
+        "z": "tab_garaje_dash",
         "name": "Responder",
         "statusCode": "",
         "headers": {},
-        "x": 800,
-        "y": 100,
+        "x": 860,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "d_chart",
+        "type": "ui_chart",
+        "z": "tab_garaje_dash",
+        "name": "Historial",
+        "group": "ui_group_garaje",
+        "order": 3,
+        "width": 0,
+        "height": 0,
+        "label": "Historial de la puerta (1 = abierta, 0 = cerrada)",
+        "chartType": "line",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "step",
+        "nodata": "Sin datos",
+        "dot": false,
+        "ymin": "0",
+        "ymax": "1",
+        "removeOlder": "1",
+        "removeOlderPoints": "",
+        "removeOlderUnit": "3600",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#1f77b4",
+            "#aec7e8",
+            "#ff7f0e",
+            "#2ca02c",
+            "#98df8a",
+            "#d62728",
+            "#ff9896",
+            "#9467bd",
+            "#c5b0d5"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "",
+        "x": 620,
+        "y": 140,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "d_tick",
+        "type": "inject",
+        "z": "tab_garaje_dash",
+        "name": "cada 1 s",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "1",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 120,
+        "y": 240,
+        "wires": [
+            [
+                "d_umbral"
+            ]
+        ]
+    },
+    {
+        "id": "d_umbral",
+        "type": "function",
+        "z": "tab_garaje_dash",
+        "name": "Tiempo abierta y umbral",
+        "func": "const UMBRAL = 30;   // segundos (umbral critico)\n\nconst desde = flow.get(\"abiertaDesde\");\nconst seg = desde ? Math.floor((Date.now() - desde) / 1000) : 0;\n\nconst alerta = (seg > UMBRAL)\n    ? \"ALERTA: puerta abierta hace \" + seg + \" s\"\n    : \"Sin alertas\";\n\nreturn [{ payload: seg }, { payload: alerta }];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 240,
+        "wires": [
+            [
+                "d_gauge"
+            ],
+            [
+                "d_texto"
+            ]
+        ]
+    },
+    {
+        "id": "d_gauge",
+        "type": "ui_gauge",
+        "z": "tab_garaje_dash",
+        "name": "",
+        "group": "ui_group_garaje",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "gtype": "gage",
+        "title": "Tiempo abierta",
+        "label": "segundos",
+        "format": "{{value}}",
+        "min": 0,
+        "max": 60,
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "15",
+        "seg2": "30",
+        "diff": false,
+        "className": "",
+        "x": 640,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "d_texto",
+        "type": "ui_text",
+        "z": "tab_garaje_dash",
+        "group": "ui_group_garaje",
+        "order": 2,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Alertas",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "className": "",
+        "x": 640,
+        "y": 280,
         "wires": []
     },
     {
@@ -101,11 +241,31 @@
         "passwordEnv": ""
     },
     {
-        "id": "29f40b3a97b5a516",
+        "id": "ui_group_garaje",
+        "type": "ui_group",
+        "name": "Puerta del garaje",
+        "tab": "ui_tab_garaje",
+        "order": 1,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "ui_tab_garaje",
+        "type": "ui_tab",
+        "name": "Alarma Garaje",
+        "icon": "dashboard",
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "462496055f223c6d",
         "type": "global-config",
         "env": [],
         "modules": {
-            "node-red-contrib-postgresql": "0.16.2"
+            "node-red-contrib-postgresql": "0.16.2",
+            "node-red-dashboard": "3.6.6"
         }
     }
 ]
