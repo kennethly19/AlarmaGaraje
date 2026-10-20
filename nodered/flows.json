@@ -1,0 +1,111 @@
+[
+    {
+        "id": "tab_garaje_corto",
+        "type": "tab",
+        "label": "Alarma Garaje (corto)",
+        "disabled": false,
+        "info": "ESP32 -> Node-RED -> PostgreSQL"
+    },
+    {
+        "id": "c_in",
+        "type": "http in",
+        "z": "tab_garaje_corto",
+        "name": "POST /puerta",
+        "url": "/puerta",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 140,
+        "y": 100,
+        "wires": [
+            [
+                "c_fn"
+            ]
+        ]
+    },
+    {
+        "id": "c_fn",
+        "type": "function",
+        "z": "tab_garaje_corto",
+        "name": "Validar estado",
+        "func": "const estado = msg.payload.estado;\n\nif (estado !== \"ABIERTA\" && estado !== \"CERRADA\") {\n    msg.statusCode = 400;\n    msg.payload = { error: \"estado no valido\" };\n    return [null, msg];   // salida 2: error\n}\n\nmsg.params = [estado];\nreturn [msg, null];       // salida 1: guardar",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 100,
+        "wires": [
+            [
+                "c_pg"
+            ],
+            [
+                "c_resp"
+            ]
+        ]
+    },
+    {
+        "id": "c_pg",
+        "type": "postgresql",
+        "z": "tab_garaje_corto",
+        "name": "Guardar evento",
+        "query": "INSERT INTO eventos (estado) VALUES ($1);",
+        "postgreSQLConfig": "pg_config",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 580,
+        "y": 80,
+        "wires": [
+            [
+                "c_resp"
+            ]
+        ]
+    },
+    {
+        "id": "c_resp",
+        "type": "http response",
+        "z": "tab_garaje_corto",
+        "name": "Responder",
+        "statusCode": "",
+        "headers": {},
+        "x": 800,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "pg_config",
+        "type": "postgreSQLConfig",
+        "name": "BD garaje",
+        "host": "127.0.0.1",
+        "hostFieldType": "str",
+        "port": "5432",
+        "portFieldType": "num",
+        "database": "garaje",
+        "databaseFieldType": "str",
+        "ssl": "false",
+        "sslFieldType": "bool",
+        "applicationName": "",
+        "applicationNameType": "str",
+        "max": "",
+        "maxFieldType": "num",
+        "idle": "",
+        "idleFieldType": "num",
+        "connectionTimeout": "",
+        "connectionTimeoutFieldType": "num",
+        "userFieldType": "cred",
+        "userEnv": "",
+        "passwordFieldType": "cred",
+        "passwordEnv": ""
+    },
+    {
+        "id": "29f40b3a97b5a516",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-postgresql": "0.16.2"
+        }
+    }
+]
